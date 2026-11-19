@@ -40,6 +40,10 @@ DELAY_BETWEEN_FETCH_AND_FOLLOW = 5
 DELAY_BETWEEN_FOLLOWS = 10
 DELAY_ON_RATE_LIMIT = 300
 
+# GitHub Actions safety controls: dry-run by default and a small per-run cap.
+DRY_RUN = os.getenv('DRY_RUN', 'true').strip().lower() in {'1', 'true', 'yes'}
+MAX_FOLLOWS = max(1, min(int(os.getenv('MAX_FOLLOWS', '5')), 10))
+
 # ===========================
 # Logging Configuration
 # ===========================
@@ -212,6 +216,7 @@ def main():
 
     # Initialize counters
     total_followers_fetched = 0
+    new_follows_this_run = 0
 
     # Initial rate limit check
     remaining, reset_time = check_rate_limit()
@@ -255,6 +260,14 @@ def main():
                     logger.debug(f"Already followed user: {user}. Skipping.")
                     continue
 
+                if DRY_RUN:
+                    logger.info(f"DRY RUN: would follow user: {user}")
+                    continue
+
+                if new_follows_this_run >= MAX_FOLLOWS:
+                    logger.info(f"Reached MAX_FOLLOWS={MAX_FOLLOWS}; stopping this run.")
+                    break
+
                 logger.info(f"Attempting to follow user: {user}")
                 success = follow_user(user)
 
@@ -262,6 +275,7 @@ def main():
                     append_followed_user(FOLLOWED_USERS_FILE, user)
                     followed_users.add(user)
                     total_followers_followed += 1
+                    new_follows_this_run += 1
                     update_follower_counter(FOLLOWER_COUNTER_FILE, total_followers_followed)
                 else:
                     logger.warning(f"Failed to follow user: {user}")
@@ -272,6 +286,10 @@ def main():
                 sleep_duration = DELAY_BETWEEN_FOLLOWS + jitter
                 logger.info(f"Sleeping for {sleep_duration:.2f} seconds before the next follow.")
                 time.sleep(sleep_duration)
+
+            if not DRY_RUN and new_follows_this_run >= MAX_FOLLOWS:
+                logger.info("Per-run follow cap reached; exiting cleanly.")
+                break
 
             # After processing each page, check rate limits
             remaining, reset_time = check_rate_limit()
