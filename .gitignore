@@ -1,2 +1,5 @@
 /venv
 .env
+
+bot.log
+bot.log.*
